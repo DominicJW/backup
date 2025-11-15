@@ -1,0 +1,132 @@
+/* static/css/style.css */
+/* Container: use a monospace font for alignment */
+/* Container: use a monospace font for alignment */
+span {
+    display: inline-block;
+}
+
+#token-display {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, monospace;
+  line-height: 1.5;
+  padding: 12px;
+}
+
+span.token {}
+
+/* Base token container styling */
+.token-container + .token-container {
+  display: block;                 /* stack children vertically */
+  position: relative;
+  margin-left: 0;
+    padding-left: var(--parent-token-width);             /* horizontal indentation per level */
+}
+/* this is its own token widht wheras it should be it's parents token width (that is the widht of the one sibling token parents token width needs to be 
+
+
+
+/* Draw vertical connector line for nested branches */
+.token-container::before {
+  content: "";
+  position: absolute;
+  left: 8px;                      /* aligns with padding-left/2 */
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: transparent;
+  pointer-events: none;
+}
+
+/* For containers that actually have children, draw the vertical line */
+.token-container:has(> .token-container)::before {
+  background: rgba(0,0,0,0.12);
+}
+
+/* Token node row (the visible token text) */
+.token {
+  display: inline-block;
+  position: relative;
+  padding: 4px 8px;
+  /* margin: 6px 0; */
+  border-radius: 6px;
+  background: linear-gradient(180deg,#fff,#f7f7f7);
+  border: 1px solid rgba(0,0,0,0.08);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.6) inset;
+  cursor: default;
+}
+
+/* Draw a connector from the vertical line to the token */
+.token::before {
+  content: "";
+  position: absolute;
+  left: -20px;                     /* reach back to the vertical line */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 1px;
+  background: rgba(0,0,0,0.12);
+}
+
+/* Smaller, muted tokens (optional) */
+.token[data-muted="true"] {
+  color: rgba(0,0,0,0.45);
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+/* Hover highlight for token */
+.token:hover {
+  background: linear-gradient(180deg,#fff8e1,#fff3c4);
+  border-color: rgba(255,160,0,0.8);
+}
+
+/* Collapsible behavior: clicking a token toggles its child container */
+.token-container.collapsed > .token-container {
+  display: none;
+}
+
+/* Visual caret for nodes that have children */
+.token-container:has(> .token-container) > .token::after {
+  content: "▾";
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.8em;
+  transform-origin: 50% 50%;
+  transition: transform .15s ease;
+  color: rgba(0,0,0,0.55);
+}
+
+/* Rotate caret when collapsed */
+.token-container.collapsed:has(> .token-container) > .token::after {
+  transform: rotate(-90deg);
+}
+
+/* Small responsive tweak */
+@media (max-width:520px){
+  #token-display { padding: 8px; font-size: 14px; }
+  .token-container .token-container { padding-left: 16px; }
+  .token::before { left: -16px; width: 12px; }
+}
+
+
+
+.context-menu {
+    position: absolute;
+    z-index: 1000;
+    background-color: white;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+.context-menu ul {
+    list-style-type: none;
+    margin: 0;
+    padding: 5px;
+}
+.context-menu li {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+.context-menu li:hover {
+    background-color: #f0f0f0;
+}

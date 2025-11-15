@@ -1,0 +1,34 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tokenization App with Interactive Tokens</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</head>
+<body>
+    <h2>Tokenization App with Interactive Tokens</h2>
+    <input type="text" id="input_text" name="input_text"><br><br>
+    <button onclick="location.href='/clear'">Clear</button>
+    <label for="token-index">Query Token Index</label>
+    <input type="number" id="token-index" readonly>
+    <br>
+    <span id="token-display"oncontextmenu="showContextMenu(event)" data-index="">R
+    </span>
+
+    <div id="contextMenu" class="context-menu" style="display: none;">
+    <ul>
+        <li onclick="handleClickAttenion('Showing attentions')">Show Attentions</li>
+        <li onclick="handleClick('Pin Attention Image')">Pin Image</li>
+        <li onclick="createBranch('Create Branch')">Create New Branch using tokens in the input box, appending to same branch is equeivelent</li>
+        <li onclick="handleClick('Delete This Branch')">Delete This Branch</li>
+    </ul>
+</div>
+
+
+
+</body>
+</html>
