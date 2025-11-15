@@ -8,6 +8,7 @@
 import socket
 import pickle
 import os
+from transformers import AutoConfig
 from multiprocessing import shared_memory
 
 
@@ -15,6 +16,8 @@ class ModelClient:
 
     def __init__(self, socket_file='/tmp/model.sock'):
         self.socket_file = socket_file
+        model_name = "mistralai/Mistral-7B-Instruct-v0.3"
+        self.config = AutoConfig.from_pretrained(model_name)
     def __call__(self, **kwargs):
         """
         Send inputs to the model server and receive outputs.
@@ -30,6 +33,7 @@ class ModelClient:
 
             # Pickle the inputs
             pickled_inputs = pickle.dumps(kwargs)#including pkv cache
+            print(kwargs)
             data_size = len(pickled_inputs)
             input_shm = shared_memory.SharedMemory(create = True,size = data_size)
             input_shm.buf[:data_size] = pickled_inputs
@@ -52,8 +56,9 @@ class ModelClient:
             # Unpickle and return the output
             output_shm = shared_memory.SharedMemory(name = output_shm_name)
             output = pickle.loads(output_shm.buf[:])
-            output_shm.close()
             print("loaded from shared memory and depickled the output")
+            output_shm.close()
+            input_shm.close()
             return output
         
         finally:

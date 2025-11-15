@@ -1,6 +1,7 @@
 from io import BytesIO
 from flask import send_file, url_for
 import matplotlib
+from matplotlib import cm
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,7 +12,7 @@ import zipfile
 import torch
 from transformers import AutoTokenizer
 from model_client import model
-
+from TextTree import TextTree
 import time
 
 
@@ -20,14 +21,13 @@ tokenizer = AutoTokenizer.from_pretrained("mistralai/Mistral-7B-Instruct-v0.3")
 
 app = Flask(__name__)
 
-
+#
 
 html = ""
 j = 0
-pkv = None
-attentions = None #interesting concatenation procedure
 existing_text = ""
 
+tree = TextTree(model = model, tokenizer = tokenizer)
 
 def get_outputs(text):
     toks = tokenizer(text,return_tensors = "pt")["input_ids"]
@@ -42,53 +42,85 @@ def index():
     return render_template('index.html', token_html=html)
 
 
-# Example function that returns a matplotlib Figure for a given token index
-def make_token_heatmap_fig(query_token_ind,key_token_ind, attn,width=1, height=1):
-    z = torch.concat([layer[:,:,query_token_ind,key_token_ind].to(torch.float64) for layer in attn],axis = 0) #concatenates the attentions
+
+def make_token_heatmap_fig_colormap_groups(attn_input, col_groups, cmaps, width=4, height=2):
+    rows, cols = attn_input.shape
+    vmin, vmax = attn_input.min(), attn_input.max()
+    norm = (attn_input - vmin) / (vmax - vmin + 1e-12)
+
+    rgb = np.zeros((rows, cols, 3))
+    for (start, end), cmap_name in zip(col_groups, cmaps):
+        cmap = cm.get_cmap(cmap_name)
+        seg = norm[:, start:end]
+        # map each value to RGBA, drop A
+        rgb[:, start:end, :] = cmap(seg)[:, :, :3]
+
     fig, ax = plt.subplots(figsize=(width, height), dpi=100)
-    im = ax.imshow(z, aspect='auto', cmap='Blues')
+    ax.imshow(rgb, aspect='auto')
     ax.axis('off')
     plt.tight_layout(pad=0)
-    if query_token_ind == key_token_ind:
-        pass
-        # plt.colorbar(im, ax=ax)
+    return fig
 
+
+
+def make_token_heatmap_fig(attn_input,width=1, height=1):    
+    #how to make this put different colours for different columns?
+    #key being for the four groups of Query heads
+    groups = [(0,8),(8,16),(16,24),(24,32)]
+    cmaps = ['Reds','Blues','Greens','Purples']
+    fig = make_token_heatmap_fig_colormap_groups(attn_input, groups, cmaps, width=1, height=1)
     return fig
 
 
 @app.route('/generate_plots_and_return', methods=['POST'])
 def generate_plots_and_return():
+    #TODO: in future we should traverse later branches
+    #we can traverse all children to find the all leaves of this node
+
+
+    #Also would be good to view the tokens attention with itself as a different colour
+    #
     data = request.json
-    query_token_ind = data.get('token_index', 0)
-    num_toks = j
-    print(existing_text)
-    # could use tokens as the input
+    query_token_ind = data.get('token_index', None)
 
-    attn = get_outputs(existing_text)["attentions"] #doesnt use the pkv cache
-    #32 layers, 32 Q heads,
-    #32,1,32,seqlen(past + new),seqlen (new) # since pkv is not in use, its justs 32,32,1,new,new
-
-    # Create a BytesIO buffer for the ZIP file
+    index_string = data.get('token_index',"")
+    index = list(map(lambda x: int(x),filter(lambda x: x != "",index_string.split(".")))) 
+    selected_node = tree.get_item_by_index(index)
+    attn = selected_node.attentions
     zip_buffer = BytesIO()
-
-    # Create a ZIP file in the BytesIO buffer
     with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-        for key_token_ind in range(num_toks):
-            fig = make_token_heatmap_fig(query_token_ind,key_token_ind,attn)  # Your function to create the figure
+        token_index_in_attention = len(index)
+        for i in range(len(index)):
+            other_token_ind = ".".join(map(lambda x: str(x),index[:i+1]))
+            attn_input = torch.concat([layer[:,:,token_index_in_attention-1,i].to(torch.float64) for layer in attn],axis = 0) #concatenates the attentions #are we certain on the shape?
             buf = BytesIO()
-            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
+            fig = make_token_heatmap_fig(attn_input = attn_input)
+            fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0) 
             plt.close(fig)
-            buf.seek(0)
-            
+            buf.seek(0)   
+
             # Add the PNG file to the ZIP file
-            zip_file.writestr(f'token_{key_token_ind}.png', buf.getvalue())
+
+            zip_file.writestr(f'token_{other_token_ind}.png', buf.getvalue())
+        
+        for leaf in selected_node.get_leaves():
+            nxt_attention = leaf.attentions
+            for i in range(token_index_in_attention,nxt_attention[0].shape[2]):
+                other_token_ind = ".".join(map(lambda x : str(x), leaf.index[:i+1])) #I think 
+                attn_input = torch.concat([layer[:,:,i,token_index_in_attention-1].to(torch.float64) for layer in nxt_attention],axis = 0) #notice key difference to the above version of this
+                buf = BytesIO()
+                fig = make_token_heatmap_fig(attn_input = attn_input)
+                fig.savefig(buf, format='png', bbox_inches='tight', pad_inches=0) 
+                plt.close(fig)
+                buf.seek(0)   
+                zip_file.writestr(f'token_{other_token_ind}.png', buf.getvalue())
 
     # Seek to the beginning of the ZIP file
     zip_buffer.seek(0)
-
     return send_file(zip_buffer, mimetype='application/zip',
                      as_attachment=True,
-                     download_name=f'tokens_{query_token_ind}.zip')
+                     download_name=f'tokens_{".".join(map(lambda x: str(x),index))}.zip')
+
 
 
 
@@ -106,7 +138,7 @@ def tokenize():
     #could make tree root actually and then we add text/branches by using context menu
     existing_text += text
     tokens = tokenizer.tokenize(text)
-    
+    #
     pieces = []
     for i, token in enumerate(tokens):
         idx = j + i
@@ -122,35 +154,33 @@ def tokenize():
 def create_new_branch():
     data = request.json
     text = data.get('input_text', '')
-    index_string = data.get('token_index',"0")
-    index = map(lambda x: int(x),index_string.split(".")) #cast list of str to list of int
-    if index_string.contains("."): 
-        last_ind = int(index_string[index_string.rfind("."):]) + 1
-        new_index = index_string[:index_string.rfind(".")] + str(last_ind)
-    else:
-        last_ind = int(index_string) + 1
-        new_index = str(last_ind)
+
+    index_string = data.get('token_index',"")
+    index = list(map(lambda x: int(x),filter(lambda x: x != "",index_string.split(".")))) #cast list of str to list of int #can be
+    node = tree.get_item_by_index(index) #empty index means return the root #in the textreee code when it gets to empty index it returns the object as is
+    tokens,new_index_single = node.add_text(text) #returns tokens as strings, sends off to model for calcs
     
-    node = tree.get_item_by_index(index)
-    tokens = node.add_text(text) #returns tokens as strings, sends off to model for calcs
-    #unfortunatly the html does store the data. 
 
     end = ""
     html = ""
+    if len(index_string) == 0:
+        new_index = f"{new_index_single}"
+    else:
+        new_index = index_string+f".{new_index_single}"
+
     for idx,token in enumerate(tokens):
-        html += f'<span class="token" data-index={new_index} oncontextmenu="showContextMenu(event)">{token}<img class="token-heatmap" alt="heatmap" loading="lazy" width="160">'
+        token = token.replace("<","").replace(">","")
+        html += f'<span class="token-container" data-index={new_index} oncontextmenu="showContextMenu(event)"> <span class ="token" data-index={new_index}>{token}<img class="token-heatmap" alt="heatmap" loading="lazy" width="160"></span>'
         end += "</span>"
         new_index += ".0"
+
     html += end
     return html
-
+#
 
 @app.route('/clear', methods=['GET'])
 def clear():
-    global html, j,existing_text
-    html = ""
-    existing_text = ""
-    j = 0
+    tree.__init__(model = tree.model,tokenizer=tree.tokenizer)
     return index()
 
 if __name__ == '__main__':
@@ -181,3 +211,15 @@ if __name__ == '__main__':
 
 
 #on front end and backend, need an empty root of the tree
+
+#should stop it from allowing two branch values to have same value
+
+
+#To hide/mask the effect of the positional encodings, we could randomly sample many sentences and subtract the average attention scores from these ones
+#average from the branches being displayed that is.
+
+
+#TODO,
+#Have a displa showing which attentions scores are being plotted
+
+#I 

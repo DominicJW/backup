@@ -26,6 +26,7 @@ model.set_attn_implementation('eager')
 
 
 def move_output_to_cpu(output):
+    print(type(output))
     if isinstance(output, torch.Tensor):
         return output.cpu()
     elif hasattr(output, "_fields"):  # Handle named tuples
@@ -78,8 +79,13 @@ try:
         except:
             pass
         with torch.no_grad():
-            outputs = model(**inputs)        
-        outputs = move_output_to_cpu(outputs)
+            output = model(**inputs)        
+        print(type(output))
+        outputs = move_output_to_cpu(output)
+        if isinstance(outputs,dict):
+            outputs = type(output)(outputs)
+
+        print(type(outputs))
         pickled_output = pickle.dumps(outputs)
         data_size = len(pickled_output)
         output_shm = shared_memory.SharedMemory(create = True,size = data_size)
@@ -87,6 +93,8 @@ try:
 
         conn.sendall(output_shm.name.encode("utf-8"))
         conn.close()
+        output_shm.close()
+        inputs_shm.close()
         print("connection closed")
 except KeyboardInterrupt:
     print("Shutting down model server...")
